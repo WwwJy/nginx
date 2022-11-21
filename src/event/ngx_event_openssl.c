@@ -3458,7 +3458,9 @@ static void
 ngx_ssl_clear_error(ngx_log_t *log)
 {
     while (ERR_peek_error()) {
-        ngx_ssl_error(NGX_LOG_ALERT, log, 0, "ignoring stale global SSL error");
+        /* 先修订，gmssl有些指令不支持，会一直打日志 */
+        // ngx_ssl_error(NGX_LOG_ALERT, log, 0, "ignoring stale global SSL error");
+        ngx_ssl_error(NGX_LOG_DEBUG, log, 0, "ignoring stale global SSL error");
     }
 
     ERR_clear_error();

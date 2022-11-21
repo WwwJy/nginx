@@ -447,6 +447,24 @@ ngx_feature_libs=
 ngx_feature_test="setsockopt(0, IPPROTO_IPV6, IPV6_RECVPKTINFO, NULL, 0)"
 . auto/feature
 
+# The recvmmsg() system  call is an extension of recvmsg that allows the caller to receive multiple messages from a socket using a single system call
+
+ngx_feature="recvmmsg"
+ngx_feature_name="NGX_HAVE_RECVMMSG"
+ngx_feature_run=no
+ngx_feature_incs="#define _GNU_SOURCE
+                  #include <sys/socket.h>"
+ngx_feature_path=
+ngx_feature_libs=
+ngx_feature_test="struct mmsghdr msgs;
+                  struct iovec iovecs;
+                  char bufs[1500];
+				  iovecs.iov_base = bufs;
+				  iovecs.iov_len = sizeof(bufs);
+				  msgs.msg_hdr.msg_iov = &iovecs;
+				  msgs.msg_hdr.msg_iovlen = 1;
+                  recvmmsg(0, &msgs, 1, 0, NULL);"
+. auto/feature
 
 ngx_feature="TCP_DEFER_ACCEPT"
 ngx_feature_name="NGX_HAVE_DEFERRED_ACCEPT"

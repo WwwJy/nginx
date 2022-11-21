@@ -192,6 +192,11 @@ struct ngx_connection_s {
 #if (NGX_THREADS || NGX_COMPAT)
     ngx_thread_task_t  *sendfile_task;
 #endif
+
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+    void*               user_info_ctx;
+#endif
+
 };
 
 

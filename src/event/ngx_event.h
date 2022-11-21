@@ -475,6 +475,14 @@ extern ngx_atomic_t  *ngx_stat_reading;
 extern ngx_atomic_t  *ngx_stat_writing;
 extern ngx_atomic_t  *ngx_stat_waiting;
 
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+extern ngx_atomic_t  *ngx_stat_proxy_manager_client_num;
+#endif
+
+#if (NGX_HTTP_PROXY_CONNECT)
+extern ngx_atomic_t  *ngx_stat_proxy_tcp_conn_num;
+#endif
+
 #endif
 
 

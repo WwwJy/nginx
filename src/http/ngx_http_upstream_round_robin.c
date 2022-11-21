@@ -9,12 +9,19 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#if (NGX_HTTP_UPSTREAM_CHECK)
+#include "ngx_http_upstream_check_module.h"
+#endif
 
 #define ngx_http_upstream_tries(p) ((p)->tries                                \
                                     + ((p)->next ? (p)->next->tries : 0))
 
 
-static ngx_http_upstream_rr_peer_t *ngx_http_upstream_get_peer(
+#if (!NGX_HTTP_PROXY_MNG_USER_INFO)
+static 
+#endif
+ngx_http_upstream_rr_peer_t *ngx_http_upstream_get_peer(
+
     ngx_http_upstream_rr_peer_data_t *rrp);
 
 #if (NGX_HTTP_SSL)
@@ -103,6 +110,22 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
                 peer[n].fail_timeout = server[i].fail_timeout;
                 peer[n].down = server[i].down;
                 peer[n].server = server[i].name;
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+                peer[n].udp_port = server[i].udp_port;
+                peer[n].tcp_port = server[i].tcp_port;
+                peer[n].tcp_addr = server[i].tcp_addr;
+                peer[n].udp_addr = server[i].udp_addr;
+#endif
+
+
+#if (NGX_HTTP_UPSTREAM_CHECK)
+                if (!server[i].down) {
+                    peer[n].check_index =
+                        ngx_http_upstream_check_add_peer(cf, us, &server[i].addrs[j]);
+                } else {
+                    peer[n].check_index = (ngx_uint_t) NGX_ERROR;
+                }
+#endif
 
                 *peerp = &peer[n];
                 peerp = &peer[n].next;
@@ -174,6 +197,16 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
                 peer[n].down = server[i].down;
                 peer[n].server = server[i].name;
 
+#if (NGX_HTTP_UPSTREAM_CHECK)
+                if (!server[i].down) {
+                    peer[n].check_index =
+                        ngx_http_upstream_check_add_peer(cf, us, &server[i].addrs[j]);
+                }
+                else {
+                    peer[n].check_index = (ngx_uint_t) NGX_ERROR;
+                }
+#endif
+
                 *peerp = &peer[n];
                 peerp = &peer[n].next;
                 n++;
@@ -241,6 +274,11 @@ ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
         peer[i].max_conns = 0;
         peer[i].max_fails = 1;
         peer[i].fail_timeout = 10;
+
+#if (NGX_HTTP_UPSTREAM_CHECK)
+        peer[i].check_index = (ngx_uint_t) NGX_ERROR;
+#endif
+
         *peerp = &peer[i];
         peerp = &peer[i].next;
     }
@@ -358,6 +396,11 @@ ngx_http_upstream_create_round_robin_peer(ngx_http_request_t *r,
         peer[0].max_conns = 0;
         peer[0].max_fails = 1;
         peer[0].fail_timeout = 10;
+
+#if (NGX_HTTP_UPSTREAM_CHECK)
+        peer[0].check_index = (ngx_uint_t) NGX_ERROR;
+#endif
+
         peers->peer = peer;
 
     } else {
@@ -392,6 +435,10 @@ ngx_http_upstream_create_round_robin_peer(ngx_http_request_t *r,
             peer[i].max_conns = 0;
             peer[i].max_fails = 1;
             peer[i].fail_timeout = 10;
+#if (NGX_HTTP_UPSTREAM_CHECK)
+            peer[i].check_index = (ngx_uint_t) NGX_ERROR;
+#endif
+
             *peerp = &peer[i];
             peerp = &peer[i].next;
         }
@@ -457,6 +504,12 @@ ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
             goto failed;
         }
 
+#if (NGX_HTTP_UPSTREAM_CHECK)
+        if (ngx_http_upstream_check_peer_down(peer->check_index)) {
+            goto failed;
+        }
+#endif
+
         rrp->current = peer;
 
     } else {
@@ -518,7 +571,112 @@ failed:
 }
 
 
-static ngx_http_upstream_rr_peer_t *
+#if (!NGX_HTTP_PROXY_MNG_USER_INFO)
+static 
+#endif
+ngx_http_upstream_rr_peer_t *
+ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
+{
+    time_t                        now;
+    uintptr_t                     m;
+    ngx_uint_t                    i, n, p;
+    ngx_http_upstream_rr_peer_t  *peer, *best;
+
+    now = ngx_time();
+
+    best = NULL;
+
+#if (NGX_SUPPRESS_WARN)
+    p = 0;
+#endif
+
+    for (peer = rrp->peers->peer, i = 0;
+         peer;
+         peer = peer->next, i++)
+    {
+        //在tried的位置
+        n = i / (8 * sizeof(uintptr_t));
+
+        //在tried对应位置的bit位置
+        m = (uintptr_t) 1 << i % (8 * sizeof(uintptr_t));
+
+        if (rrp->tried[n] & m) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "rrp->tried[n] & m = 1");
+            continue;
+        }
+
+        if (peer->down) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "peer->down = 1");
+            continue;
+        }
+
+        //健康检查的状态
+#if (NGX_HTTP_UPSTREAM_CHECK)
+        if (ngx_http_upstream_check_peer_down(peer->check_index)) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "ngx_http_upstream_check_peer_down = 1");
+            continue;
+        }
+#endif
+
+        if (peer->max_fails
+            && peer->fails >= peer->max_fails
+            && now - peer->checked <= peer->fail_timeout)
+        {
+            ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, "fails check != 0");
+            continue;
+        }
+
+        if (peer->max_conns && peer->conns >= peer->max_conns) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "max_conns check != 0");
+            continue;
+        }
+#if (NGX_HTTP_UPSTREAM_CHECK)
+        if (best == NULL || ngx_http_upstream_check_get_manager_conn(peer->check_index)
+                < ngx_http_upstream_check_get_manager_conn(best->check_index)) {
+            best = peer;
+        }
+
+#else
+        if (best == NULL || peer->conns < best->conns) {
+            best = peer;
+        }
+#endif
+    }
+
+    //没选出合适的
+    if (best == NULL) {
+        ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, "best == NULL");
+        return NULL;
+    }
+
+    rrp->current = best;
+
+    //在tried的位置
+    n = p / (8 * sizeof(uintptr_t));
+    //在tried对应位置的bit位置
+    m = (uintptr_t) 1 << p % (8 * sizeof(uintptr_t));
+
+    rrp->tried[n] |= m;
+
+
+    ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, 
+        "rb balance return node index:%d byte:%ui bit:%ui current_weight:%d" 
+        "effective_weight:%d", (int)(best->check_index), n, m, 
+        (int)(best->current_weight), (int)(best->effective_weight));
+
+    if (now - best->checked > best->fail_timeout) {
+        best->checked = now;
+    }
+
+    return best;
+}
+
+#if 0
+ngx_http_upstream_rr_peer_t *
 ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
 {
     time_t                        now;
@@ -540,53 +698,96 @@ ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
          peer;
          peer = peer->next, i++)
     {
+        //在tried的位置
         n = i / (8 * sizeof(uintptr_t));
+
+        //在tried对应位置的bit位置
         m = (uintptr_t) 1 << i % (8 * sizeof(uintptr_t));
 
         if (rrp->tried[n] & m) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "rrp->tried[n] & m = 1");
+
             continue;
         }
 
         if (peer->down) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "peer->down = 1");
+
             continue;
         }
+
+        //健康检查的状态
+#if (NGX_HTTP_UPSTREAM_CHECK)
+        if (ngx_http_upstream_check_peer_down(peer->check_index)) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "ngx_http_upstream_check_peer_down = 1");
+
+            continue;
+        }
+#endif
 
         if (peer->max_fails
             && peer->fails >= peer->max_fails
             && now - peer->checked <= peer->fail_timeout)
         {
+            ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, "fails check != 0");
             continue;
         }
 
         if (peer->max_conns && peer->conns >= peer->max_conns) {
+            ngx_log_error(NGX_LOG_WARN, 
+                ngx_cycle->log, 0, "max_conns check != 0");
             continue;
         }
 
+        //每个peer当前权值加设置的权重
         peer->current_weight += peer->effective_weight;
+
+        //当前这轮增加的所有权值总和
         total += peer->effective_weight;
 
+        //有效权重每轮加1知道为设置的权重为止
         if (peer->effective_weight < peer->weight) {
             peer->effective_weight++;
         }
 
+        ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, 
+            "rb balance index:%d byte:%ui bit:%ui current_weight:%d "
+            "effective_weight:%d", (int)(peer->check_index), n, m, 
+            (int)(peer->current_weight), (int)(peer->effective_weight));
+
+        //取当前权重的最大值者
         if (best == NULL || peer->current_weight > best->current_weight) {
             best = peer;
             p = i;
         }
     }
 
+    //没选出合适的
     if (best == NULL) {
+        ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, "best == NULL");
         return NULL;
     }
 
     rrp->current = best;
 
+     //在tried的位置
     n = p / (8 * sizeof(uintptr_t));
+    //在tried对应位置的bit位置
     m = (uintptr_t) 1 << p % (8 * sizeof(uintptr_t));
 
     rrp->tried[n] |= m;
 
+    //被选中节点的权重减少当前增加的权重总和，实际就是在这轮开始前
+    //除节点本身外其它节点增加的权重和
     best->current_weight -= total;
+
+    ngx_log_error(NGX_LOG_WARN, ngx_cycle->log, 0, 
+        "rb balance return node index:%d byte:%ui bit:%ui current_weight:%d" 
+        "effective_weight:%d", (int)(best->check_index), n, m, 
+        (int)(best->current_weight), (int)(best->effective_weight));
 
     if (now - best->checked > best->fail_timeout) {
         best->checked = now;
@@ -594,6 +795,7 @@ ngx_http_upstream_get_peer(ngx_http_upstream_rr_peer_data_t *rrp)
 
     return best;
 }
+#endif
 
 
 void

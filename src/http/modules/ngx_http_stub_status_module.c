@@ -87,7 +87,7 @@ ngx_http_stub_status_handler(ngx_http_request_t *r)
     ngx_int_t          rc;
     ngx_buf_t         *b;
     ngx_chain_t        out;
-    ngx_atomic_int_t   ap, hn, ac, rq, rd, wr, wa;
+    ngx_atomic_int_t   ap, hn, ac, rq, rd, wr, wa, tn;
 
     if (!(r->method & (NGX_HTTP_GET|NGX_HTTP_HEAD))) {
         return NGX_HTTP_NOT_ALLOWED;
@@ -104,6 +104,10 @@ ngx_http_stub_status_handler(ngx_http_request_t *r)
     r->headers_out.content_type_lowcase = NULL;
 
     size = sizeof("Active connections:  \n") + NGX_ATOMIC_T_LEN
+#if (NGX_HTTP_PROXY_CONNECT)
+           + sizeof("Proxy tcp connections:  \n") + NGX_ATOMIC_T_LEN
+#endif
+
            + sizeof("server accepts handled requests\n") - 1
            + 6 + 3 * NGX_ATOMIC_T_LEN
            + sizeof("Reading:  Writing:  Waiting:  \n") + 3 * NGX_ATOMIC_T_LEN;
@@ -123,8 +127,13 @@ ngx_http_stub_status_handler(ngx_http_request_t *r)
     rd = *ngx_stat_reading;
     wr = *ngx_stat_writing;
     wa = *ngx_stat_waiting;
+    tn = *ngx_stat_proxy_tcp_conn_num;
 
     b->last = ngx_sprintf(b->last, "Active connections: %uA \n", ac);
+#if (NGX_HTTP_PROXY_CONNECT)
+    b->last = ngx_sprintf(b->last, "Proxy tcp connections: %uA \n", tn);
+#endif
+
 
     b->last = ngx_cpymem(b->last, "server accepts handled requests\n",
                          sizeof("server accepts handled requests\n") - 1);
@@ -134,7 +143,7 @@ ngx_http_stub_status_handler(ngx_http_request_t *r)
     b->last = ngx_sprintf(b->last, "Reading: %uA Writing: %uA Waiting: %uA \n",
                           rd, wr, wa);
 
-    r->headers_out.status = NGX_HTTP_OK;
+    r->headers_out.status = NGX_HTTP_HEALTH_CHECK_STATUS_OK;
     r->headers_out.content_length_n = b->last - b->pos;
 
     b->last_buf = (r == r->main) ? 1 : 0;

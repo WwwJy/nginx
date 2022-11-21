@@ -278,9 +278,9 @@ ngx_stream_write_filter(ngx_stream_session_t *s, ngx_chain_t *in,
 
     if (chain) {
         if (c->shared) {
-            ngx_log_error(NGX_LOG_ALERT, c->log, 0,
-                          "shared connection is busy");
-            return NGX_ERROR;
+            // ngx_log_error(NGX_LOG_ALERT, c->log, 0,
+            //              "shared connection is busy");
+            //return NGX_ERROR;
         }
 
         c->buffered |= NGX_STREAM_WRITE_BUFFERED;

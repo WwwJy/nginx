@@ -80,6 +80,8 @@
 #define NGX_HTTP_NO_CONTENT                204
 #define NGX_HTTP_PARTIAL_CONTENT           206
 
+#define NGX_HTTP_HEALTH_CHECK_STATUS_OK    280
+
 #define NGX_HTTP_SPECIAL_RESPONSE          300
 #define NGX_HTTP_MOVED_PERMANENTLY         301
 #define NGX_HTTP_MOVED_TEMPORARILY         302
@@ -93,6 +95,7 @@
 #define NGX_HTTP_FORBIDDEN                 403
 #define NGX_HTTP_NOT_FOUND                 404
 #define NGX_HTTP_NOT_ALLOWED               405
+#define NGX_HTTP_PROXY_UNAUTHORIZED        407
 #define NGX_HTTP_REQUEST_TIME_OUT          408
 #define NGX_HTTP_CONFLICT                  409
 #define NGX_HTTP_LENGTH_REQUIRED           411

@@ -74,6 +74,15 @@ static ngx_atomic_t   ngx_stat_writing0;
 ngx_atomic_t         *ngx_stat_writing = &ngx_stat_writing0;
 static ngx_atomic_t   ngx_stat_waiting0;
 ngx_atomic_t         *ngx_stat_waiting = &ngx_stat_waiting0;
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+static ngx_atomic_t   ngx_stat_proxy_manager_client_num0;
+ngx_atomic_t         *ngx_stat_proxy_manager_client_num = &ngx_stat_proxy_manager_client_num0;
+#endif
+
+#if (NGX_HTTP_PROXY_CONNECT)
+static ngx_atomic_t   ngx_stat_proxy_tcp_conn_num0;
+ngx_atomic_t         *ngx_stat_proxy_tcp_conn_num = &ngx_stat_proxy_tcp_conn_num0;
+#endif
 
 #endif
 
@@ -543,6 +552,13 @@ ngx_event_module_init(ngx_cycle_t *cycle)
            + cl          /* ngx_stat_reading */
            + cl          /* ngx_stat_writing */
            + cl;         /* ngx_stat_waiting */
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+    size += cl;          /* ngx_stat_proxy_manager_client_num */
+#endif
+
+#if (NGX_HTTP_PROXY_CONNECT)
+    size += cl;          /* ngx_stat_proxy_tcp_conn_num */
+#endif
 
 #endif
 
@@ -589,6 +605,14 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     ngx_stat_reading = (ngx_atomic_t *) (shared + 7 * cl);
     ngx_stat_writing = (ngx_atomic_t *) (shared + 8 * cl);
     ngx_stat_waiting = (ngx_atomic_t *) (shared + 9 * cl);
+
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+    ngx_stat_proxy_manager_client_num = (ngx_atomic_t *) (shared + 10 * cl);
+#endif
+
+#if (NGX_HTTP_PROXY_CONNECT)
+    ngx_stat_proxy_tcp_conn_num = (ngx_atomic_t *) (shared + 11 * cl);
+#endif
 
 #endif
 

@@ -21,6 +21,12 @@ struct ngx_http_upstream_rr_peer_s {
     socklen_t                       socklen;
     ngx_str_t                       name;
     ngx_str_t                       server;
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+    ngx_uint_t                      udp_port;
+    ngx_uint_t                      tcp_port;
+    ngx_str_t                       udp_addr;
+    ngx_str_t                       tcp_addr;
+#endif
 
     ngx_int_t                       current_weight;
     ngx_int_t                       effective_weight;
@@ -37,6 +43,10 @@ struct ngx_http_upstream_rr_peer_s {
     time_t                          fail_timeout;
     ngx_msec_t                      slow_start;
     ngx_msec_t                      start_time;
+
+#if (NGX_HTTP_UPSTREAM_CHECK)
+    ngx_uint_t                      check_index;
+#endif
 
     ngx_uint_t                      down;
 
@@ -151,6 +161,11 @@ ngx_int_t
     void *data);
 void ngx_http_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
     void *data);
+#endif
+
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+ngx_http_upstream_rr_peer_t *ngx_http_upstream_get_peer(
+    ngx_http_upstream_rr_peer_data_t *rrp);
 #endif
 
 

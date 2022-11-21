@@ -64,6 +64,13 @@ static void ngx_http_ssl_handshake(ngx_event_t *rev);
 static void ngx_http_ssl_handshake_handler(ngx_connection_t *c);
 #endif
 
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+typedef int (*ngx_http_user_info_free_handler_pt) (void* data);
+typedef struct {
+    void* data;
+    ngx_http_user_info_free_handler_pt  handler;
+} ngx_user_info_connection_ctx_t;
+#endif
 
 static char *ngx_http_client_errors[] = {
 
@@ -194,6 +201,11 @@ ngx_http_header_t  ngx_http_headers_in[] = {
 
     { ngx_string("Date"), offsetof(ngx_http_headers_in_t, date),
                  ngx_http_process_header_line },
+#endif
+
+#if (NGX_HTTP_PROXY_CONNECT)
+    { ngx_string("Proxy-Authorization"), offsetof(ngx_http_headers_in_t, authorization),
+             ngx_http_process_header_line },
 #endif
 
     { ngx_string("Cookie"), offsetof(ngx_http_headers_in_t, cookies),
@@ -3781,6 +3793,18 @@ ngx_http_close_connection(ngx_connection_t *c)
     c->destroyed = 1;
 
     pool = c->pool;
+    
+#if (NGX_HTTP_PROXY_MNG_USER_INFO)
+    if (c->user_info_ctx) {
+        ngx_user_info_connection_ctx_t* ctx = c->user_info_ctx;
+        ctx->handler(ctx);
+#if (NGX_STAT_STUB)
+        (void) ngx_atomic_fetch_add(ngx_stat_proxy_manager_client_num, -1);
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
+            "close http user info connection: %d", c->fd);
+#endif
+    }
+#endif
 
     ngx_close_connection(c);
 

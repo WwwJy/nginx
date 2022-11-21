@@ -29,6 +29,8 @@ static char *ngx_load_module(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 #if (NGX_HAVE_DLOPEN)
 static void ngx_unload_module(void *data);
 #endif
+static void create_proxy_passwd(ngx_cycle_t* cycle, unsigned char* pchIn, 
+    int nInLen);
 
 
 static ngx_conf_enum_t  ngx_debug_points[] = {
@@ -187,6 +189,7 @@ static u_char      *ngx_error_log;
 static u_char      *ngx_conf_file;
 static u_char      *ngx_conf_params;
 static char        *ngx_signal;
+static u_char      *ngx_passwd;
 
 
 static char **ngx_os_environ;
@@ -261,6 +264,11 @@ main(int argc, char *const *argv)
 
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
+    }
+    if (ngx_passwd) {
+        create_proxy_passwd(&init_cycle, ngx_passwd, 
+                            (int)strlen((const char*)ngx_passwd));
+        return 0;
     }
 
     if (ngx_os_init(log) != NGX_OK) {
@@ -391,6 +399,9 @@ static void
 ngx_show_version_info(void)
 {
     ngx_write_stderr("nginx version: " NGINX_VER_BUILD NGX_LINEFEED);
+#ifdef NGINX_GIT_COMMIT_ID
+    ngx_write_stderr("nginx git commit id: " NGINX_GIT_COMMIT_ID NGX_LINEFEED);
+#endif
 
     if (ngx_show_help) {
         ngx_write_stderr(
@@ -423,6 +434,7 @@ ngx_show_version_info(void)
 #endif
             "  -c filename   : set configuration file (default: " NGX_CONF_PATH
                                ")" NGX_LINEFEED
+            "  -e passwd     : create proxy auth passwd " NGX_LINEFEED
             "  -g directives : set global directives out of configuration "
                                "file" NGX_LINEFEED NGX_LINEFEED
         );
@@ -851,6 +863,19 @@ ngx_get_options(int argc, char *const *argv)
                 }
 
                 ngx_log_stderr(0, "option \"-g\" requires parameter");
+                return NGX_ERROR;
+
+            case 'e':
+                if (*p) {
+                    ngx_passwd = p;
+                    goto next;
+                }
+
+                if (argv[++i]) {
+                    ngx_passwd = (u_char *) argv[i];
+                    goto next;
+                }
+                ngx_log_stderr(0, "option \"-e\" requires parameter");
                 return NGX_ERROR;
 
             case 's':
@@ -1512,7 +1537,7 @@ ngx_set_worker_processes(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value = cf->args->elts;
 
     if (ngx_strcmp(value[1].data, "auto") == 0) {
-        ccf->worker_processes = ngx_ncpu;
+        ccf->worker_processes = 2 * ngx_ncpu;
         return NGX_CONF_OK;
     }
 
@@ -1622,3 +1647,51 @@ ngx_unload_module(void *data)
 }
 
 #endif
+
+void create_proxy_passwd(ngx_cycle_t* cycle, unsigned char* plaitxt, int len) {
+
+#define PASS_WD_FILE "/.passwd"
+#define USER_INFO_PASSWD_KEY "123456"
+
+    EVP_CIPHER_CTX*     ctx;
+    char                iv[EVP_MAX_IV_LENGTH] = {0x00};
+    unsigned char       key[EVP_MAX_KEY_LENGTH] = {0x00};
+    unsigned char       ciphertext[1024] = {0};
+    int                 ciphertext_len = 0;
+    int                 bytes_written = 0;
+    char                filename[250] = {0};
+
+    memcpy(key, USER_INFO_PASSWD_KEY, strlen(USER_INFO_PASSWD_KEY));
+    ctx = EVP_CIPHER_CTX_new();
+    EVP_CIPHER_CTX_init(ctx);
+    EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, (const unsigned char*)&key[0], 
+                       (const unsigned char*)&iv[0]);
+
+    if(!EVP_EncryptUpdate(ctx, &ciphertext[0], &bytes_written, 
+                          (unsigned char *) plaitxt, len)) {
+        return;
+    }
+    ciphertext_len += bytes_written;
+
+    if(!EVP_EncryptFinal_ex(ctx, ciphertext + bytes_written, &bytes_written)) {
+        return;
+    }
+    ciphertext_len += bytes_written;
+    ciphertext[ciphertext_len] = 0;
+
+    EVP_CIPHER_CTX_cleanup(ctx);
+    EVP_CIPHER_CTX_free(ctx);
+
+    memcpy(filename, cycle->conf_prefix.data, cycle->conf_prefix.len);
+    strcat(filename, PASS_WD_FILE);
+
+    FILE * pFile = NULL;
+    pFile = fopen(filename, "wb");
+    if (pFile != NULL) {
+        fwrite(ciphertext, 1, ciphertext_len, pFile);
+        fclose(pFile);
+    }
+
+    return;
+}
+
