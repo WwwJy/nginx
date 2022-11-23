@@ -434,7 +434,7 @@ ngx_show_version_info(void)
 #endif
             "  -c filename   : set configuration file (default: " NGX_CONF_PATH
                                ")" NGX_LINEFEED
-            "  -e passwd     : create proxy auth passwd " NGX_LINEFEED
+            "  -n passwd     : create proxy auth passwd " NGX_LINEFEED
             "  -g directives : set global directives out of configuration "
                                "file" NGX_LINEFEED NGX_LINEFEED
         );
@@ -865,7 +865,7 @@ ngx_get_options(int argc, char *const *argv)
                 ngx_log_stderr(0, "option \"-g\" requires parameter");
                 return NGX_ERROR;
 
-            case 'e':
+            case 'n':
                 if (*p) {
                     ngx_passwd = p;
                     goto next;
